@@ -69,6 +69,18 @@ ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
 Without it, spans created in forks won't be children of the span active when the fork was created. This also applies to
 flow stages which run asynchronously, e.g. after a `buffer()`.
 
+The binding covers everything called within it, at any depth, including scopes created by code which knows nothing about
+it. Hence it's usually set once, at the entry point:
+
+```java
+public static void main(String[] args) throws Exception {
+    ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+        .call(() -> runApp());
+}
+```
+
+Code which runs outside the binding - e.g. on threads which aren't created within it - won't propagate the context.
+
 ## Spans around flows
 
 [Flows](flows.md) can open a span for each element. The span is a child of the current span, and if the code
