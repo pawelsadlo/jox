@@ -1,11 +1,11 @@
 package com.softwaremill.jox.otel.context;
 
-import com.softwaremill.jox.structured.ForkDecorator;
+import java.util.concurrent.Callable;
 
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 
-import java.util.concurrent.Callable;
+import com.softwaremill.jox.structured.ForkDecorator;
 
 /**
  * A {@link ForkDecorator} which propagates the OpenTelemetry {@link Context} to forks: the context

@@ -2,7 +2,10 @@ package com.softwaremill.jox.otel.tracing;
 
 import static com.softwaremill.jox.otel.tracing.SpanOptions.spanOptions;
 
-import com.softwaremill.jox.structured.ThrowingRunnable;
+import java.nio.channels.ClosedByInterruptException;
+import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
@@ -10,10 +13,7 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 
-import java.nio.channels.ClosedByInterruptException;
-import java.util.Optional;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
+import com.softwaremill.jox.structured.ThrowingRunnable;
 
 /** Helpers for creating OpenTelemetry spans around code which uses Jox's concurrency operators. */
 public final class Tracing {
