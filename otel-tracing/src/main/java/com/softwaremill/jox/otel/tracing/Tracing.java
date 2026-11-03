@@ -2,10 +2,7 @@ package com.softwaremill.jox.otel.tracing;
 
 import static com.softwaremill.jox.otel.tracing.SpanOptions.spanOptions;
 
-import java.nio.channels.ClosedByInterruptException;
-import java.util.Optional;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
+import com.softwaremill.jox.structured.ThrowingRunnable;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
@@ -13,7 +10,10 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 
-import com.softwaremill.jox.structured.ThrowingRunnable;
+import java.nio.channels.ClosedByInterruptException;
+import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 
 /** Helpers for creating OpenTelemetry spans around code which uses Jox's concurrency operators. */
 public final class Tracing {
@@ -35,9 +35,9 @@ public final class Tracing {
      * AutoCloseableSpan}, which ends the span and restores the previously current one.
      * Try-with-resources guarantees that.
      *
-     * <p>For the context to be propagated to forks, the {@code PropagatingVirtualThreadFactory}
-     * from the {@code otel-context} module is required: it has to be set as the thread factory used
-     * by concurrency scopes, using the {@code Scope#THREAD_FACTORY} scoped value.
+     * <p>For the context to be propagated to forks, the {@code PropagatingForkDecorator} from the
+     * {@code otel-context} module is required: it has to be set as the fork decorator used by
+     * concurrency scopes, using the {@code Scope#FORK_DECORATOR} scoped value.
      *
      * @return an {@link AutoCloseableSpan}, which closes the opened span
      */
@@ -72,16 +72,14 @@ public final class Tracing {
      * <p>If {@code t} throws, the exception is recorded on the span as an event, and the span's
      * status is set to {@code ERROR}. Interruptions are not failures: they end the span normally.
      */
-    public static <T> T span(Tracer tracer, String spanName, Callable<T> t)
-            throws Exception {
+    public static <T> T span(Tracer tracer, String spanName, Callable<T> t) throws Exception {
         return span(tracer, spanName, spanOptions(), t);
     }
 
     /**
      * @see #span(Tracer, String, Callable)
      */
-    public static <T> T span(
-            Tracer tracer, String spanName, SpanOptions options, Callable<T> t)
+    public static <T> T span(Tracer tracer, String spanName, SpanOptions options, Callable<T> t)
             throws Exception {
         var finalizer = spanUnsafe(tracer, spanName, options);
         Throwable thrown = null;
@@ -95,7 +93,7 @@ public final class Tracing {
                 if (shouldRecordDefect(e)) {
                     actionableThrown = Optional.of(e);
                     finalizer.span().recordException(e);
-                    finalizer.span().setStatus(StatusCode.ERROR, String.valueOf(e.getMessage()));
+                    finalizer.span().setStatus(StatusCode.ERROR, e.getMessage());
                 }
             }
 
@@ -118,10 +116,9 @@ public final class Tracing {
         return result;
     }
 
-    /**
-     * As {@link #span(Tracer, String, Callable)}, for code which doesn't return a value.
-     */
-    public static void spanRun(Tracer tracer, String spanName, ThrowingRunnable t) throws Exception {
+    /** As {@link #span(Tracer, String, Callable)}, for code which doesn't return a value. */
+    public static void spanRun(Tracer tracer, String spanName, ThrowingRunnable t)
+            throws Exception {
         spanRun(tracer, spanName, spanOptions(), t);
     }
 

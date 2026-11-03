@@ -44,18 +44,22 @@ For code which doesn't return a value, use `spanRun`.
 
 ## Propagating the context
 
-The current span is kept in the OpenTelemetry `Context`, which by default isn't propagated to new virtual threads, e.g.
-forks created in [`supervised`](structured.md) scopes. Jox tracing therefore should be used with the
-`PropagatingVirtualThreadFactory` from the `otel-context` module, set as the thread factory used by concurrency scopes
-through the `Scope.THREAD_FACTORY` scoped value:
+The current span is kept in the OpenTelemetry `Context`, which by default isn't propagated to forks created in
+[`supervised`](structured.md) scopes. Forks are started by the thread which runs the enclosing `supervised`, not by the
+thread which calls `fork`, so values inherited when a thread is created - such as the OpenTelemetry context - come from
+that thread, and not from the one which started the fork.
+
+Jox tracing therefore should be used with the `PropagatingForkDecorator` from the `otel-context` module, set as the fork
+decorator used by concurrency scopes through the `Scope.FORK_DECORATOR` scoped value. It captures the context when
+`fork` is called, and restores it around the fork's body:
 
 ```java
 import static com.softwaremill.jox.structured.Scopes.supervised;
 
-import com.softwaremill.jox.otel.context.PropagatingVirtualThreadFactory;
+import com.softwaremill.jox.otel.context.PropagatingForkDecorator;
 import com.softwaremill.jox.structured.Scope;
 
-ScopedValue.where(Scope.THREAD_FACTORY, new PropagatingVirtualThreadFactory())
+ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
     .call(() -> supervised(scope -> {
         // spans created in forks are children of the span active when the fork was created
         return null;

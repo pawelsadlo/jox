@@ -9,10 +9,11 @@ import com.softwaremill.jox.flows.Flows;
 
 /** Helpers for creating OpenTelemetry spans around {@link Flow} elements. */
 public final class FlowTracing {
-    private FlowTracing() {}
+    private FlowTracing() {
+    }
 
     /**
-     * Returns a flow, which for each element of the given flow opens a new span. The span is made a
+     * Returns a flow, which for each element emitted from the given flow opens a new span. The span is made a
      * child of the current span, and becomes the current one until it ends, when the previously
      * current span is restored.
      *
@@ -25,6 +26,7 @@ public final class FlowTracing {
     public static <T> Flow<T> spanEach(Flow<T> flow, Tracer tracer, String spanName) {
         return spanEach(flow, tracer, spanName, spanOptions());
     }
+
 
     /**
      * @see #spanEach(Flow, Tracer, String)

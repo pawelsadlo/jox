@@ -7,23 +7,13 @@ import static com.softwaremill.jox.otel.tracing.Tracing.span;
 import static com.softwaremill.jox.otel.tracing.Tracing.spanRun;
 import static com.softwaremill.jox.otel.tracing.Tracing.spanUnsafe;
 import static com.softwaremill.jox.structured.Scopes.supervised;
+
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.nio.channels.AsynchronousCloseException;
-import java.nio.channels.ClosedByInterruptException;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
-
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Test;
+import com.softwaremill.jox.flows.Flow;
+import com.softwaremill.jox.flows.Flows;
+import com.softwaremill.jox.otel.context.PropagatingForkDecorator;
+import com.softwaremill.jox.structured.Scope;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
@@ -37,10 +27,21 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 
-import com.softwaremill.jox.flows.Flow;
-import com.softwaremill.jox.flows.Flows;
-import com.softwaremill.jox.otel.context.PropagatingVirtualThreadFactory;
-import com.softwaremill.jox.structured.Scope;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
+
+import java.nio.channels.AsynchronousCloseException;
+import java.nio.channels.ClosedByInterruptException;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 public class OtelTracingTest {
     private static final InMemorySpanExporter exporter = InMemorySpanExporter.create();
@@ -130,7 +131,9 @@ public class OtelTracingTest {
         var options =
                 spanOptions()
                         .withBeforeClose(
-                                s -> s.exceptionOpt().ifPresent(e -> s.span().addEvent(e.toString())));
+                                s ->
+                                        s.exceptionOpt()
+                                                .ifPresent(e -> s.span().addEvent(e.toString())));
 
         assertThrows(
                 Exception.class,
@@ -163,7 +166,9 @@ public class OtelTracingTest {
         assertTrue(
                 failed.getEvents().stream()
                         .anyMatch(
-                                e -> !e.getName().equals("exception") && e.getName().contains("boom")));
+                                e ->
+                                        !e.getName().equals("exception")
+                                                && e.getName().contains("boom")));
         f.assertNesting();
     }
 
@@ -228,7 +233,7 @@ public class OtelTracingTest {
         var f = new Fixture();
         var parent = spanUnsafe(tracer, f.name(LEVEL0));
 
-        ScopedValue.where(Scope.THREAD_FACTORY, new PropagatingVirtualThreadFactory())
+        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
                 .call(
                         () ->
                                 spanEach(f.flow, tracer, f.name(LEVEL1))
@@ -241,6 +246,7 @@ public class OtelTracingTest {
 
         var level0Id = f.spansOf(LEVEL0).getFirst().getSpanId();
         assertEquals(3, f.spansOf(LEVEL1).size());
+        assertEquals(3, f.spansOf(LEVEL1_STAGE).size());
         assertTrue(
                 f.spansOf(LEVEL1_STAGE).stream()
                         .allMatch(s -> s.getParentSpanId().equals(level0Id)));
@@ -252,7 +258,7 @@ public class OtelTracingTest {
         var f = new Fixture();
         var parent = spanUnsafe(tracer, f.name(LEVEL0));
 
-        ScopedValue.where(Scope.THREAD_FACTORY, new PropagatingVirtualThreadFactory())
+        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
                 .call(
                         () ->
                                 supervised(
@@ -260,7 +266,10 @@ public class OtelTracingTest {
                                             for (int i = 0; i < 5; i++) {
                                                 scope.fork(
                                                         () ->
-                                                                spanEach(f.flow, tracer, f.name(LEVEL1))
+                                                                spanEach(
+                                                                                f.flow,
+                                                                                tracer,
+                                                                                f.name(LEVEL1))
                                                                         .runToList());
                                             }
                                             return null;
@@ -293,7 +302,13 @@ public class OtelTracingTest {
         assertTrue(
                 spans.stream()
                         .allMatch(
-                                s -> "v".equals(s.getAttributes().get(AttributeKey.stringKey("k")))));
+                                s ->
+                                        "v"
+                                                .equals(
+                                                        s.getAttributes()
+                                                                .get(
+                                                                        AttributeKey.stringKey(
+                                                                                "k")))));
     }
 
     // endregion
@@ -301,11 +316,11 @@ public class OtelTracingTest {
     // region context propagation
 
     @Test
-    void shouldPropagateTheContextToForksWithThePropagatingThreadFactory() throws Exception {
+    void shouldPropagateTheContextToForksWithTheDecorator() throws Exception {
         var f = new Fixture();
         var parent = spanUnsafe(tracer, f.name(LEVEL0));
 
-        ScopedValue.where(Scope.THREAD_FACTORY, new PropagatingVirtualThreadFactory())
+        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
                 .call(
                         () ->
                                 supervised(
@@ -325,7 +340,37 @@ public class OtelTracingTest {
     }
 
     @Test
-    void shouldNotPropagateTheContextToForksWithoutThePropagatingThreadFactory() throws Exception {
+    void shouldPropagateASpanOpenedInsideTheScopeToForksStartedUnderIt() throws Exception {
+        var f = new Fixture();
+
+        // a long-lived scope, with a span opened per unit of work *inside* it
+        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+                .call(
+                        () ->
+                                supervised(
+                                        scope -> {
+                                            var perItem = spanUnsafe(tracer, f.name(LEVEL0));
+                                            scope.forkUser(
+                                                            () ->
+                                                                    span(
+                                                                            tracer,
+                                                                            f.name(LEVEL1),
+                                                                            () -> 1))
+                                                    .join();
+                                            perItem.close();
+                                            return null;
+                                        }));
+
+        assertEquals(1, f.spansOf(LEVEL0).size());
+        assertEquals(1, f.spansOf(LEVEL1).size());
+        // the forked span must be a child of the span that was current when fork() was called
+        assertEquals(
+                f.spansOf(LEVEL0).getFirst().getSpanId(),
+                f.spansOf(LEVEL1).getFirst().getParentSpanId());
+    }
+
+    @Test
+    void shouldNotPropagateTheContextToForksWithoutTheDecorator() throws Exception {
         var f = new Fixture();
         var parent = spanUnsafe(tracer, f.name(LEVEL0));
 
@@ -335,7 +380,7 @@ public class OtelTracingTest {
 
         var level0Id = f.spansOf(LEVEL0).getFirst().getSpanId();
         assertEquals(1, f.spansOf(LEVEL1).size());
-        // without the propagating factory, the fork's span is not a child of Level0
+        // without the decorator, the fork's span is not a child of Level0
         assertNotEquals(level0Id, f.spansOf(LEVEL1).getFirst().getParentSpanId());
     }
 
@@ -377,6 +422,26 @@ public class OtelTracingTest {
         var s = f.spansOf(LEVEL0).getFirst();
         assertEquals(StatusCode.ERROR, s.getStatus().getStatusCode());
         assertEquals("boom", s.getStatus().getDescription());
+    }
+
+    @Test
+    void shouldLeaveTheStatusDescriptionEmptyWhenTheExceptionHasNoMessage() {
+        var f = new Fixture();
+
+        assertThrows(
+                Exception.class,
+                () ->
+                        spanRun(
+                                tracer,
+                                f.name(LEVEL0),
+                                () -> {
+                                    throw new RuntimeException();
+                                }));
+
+        var s = f.spansOf(LEVEL0).getFirst();
+        assertEquals(StatusCode.ERROR, s.getStatus().getStatusCode());
+        // not the literal string "null"
+        assertEquals("", s.getStatus().getDescription());
     }
 
     @Test
@@ -432,6 +497,37 @@ public class OtelTracingTest {
     }
 
     @Test
+    void shouldAddTheExceptionOfBeforeCloseAsSuppressedToAnInterruption() {
+        var f = new Fixture();
+        var interruption = new InterruptedException();
+
+        var thrown =
+                assertThrows(
+                        InterruptedException.class,
+                        () ->
+                                spanRun(
+                                        tracer,
+                                        f.name(LEVEL0),
+                                        spanOptions()
+                                                .withBeforeClose(
+                                                        s -> {
+                                                            throw new RuntimeException(
+                                                                    "from beforeClose");
+                                                        }),
+                                        () -> {
+                                            throw interruption;
+                                        }));
+
+        // the interruption isn't recorded, but the callback's exception is still suppressed onto it
+        assertSame(interruption, thrown);
+        assertTrue(
+                Arrays.stream(thrown.getSuppressed())
+                        .anyMatch(e -> "from beforeClose".equals(e.getMessage())));
+        assertEquals(1, f.spansOf(LEVEL0).size());
+        assertEquals(StatusCode.UNSET, f.spansOf(LEVEL0).getFirst().getStatus().getStatusCode());
+    }
+
+    @Test
     void shouldPassSpanKindAndAttributesToTheSpanBuilder() throws Exception {
         var f = new Fixture();
         var attr = Attributes.of(AttributeKey.stringKey("k"), "v");
@@ -445,6 +541,34 @@ public class OtelTracingTest {
         var s = f.spansOf(LEVEL0).getFirst();
         assertEquals(SpanKind.PRODUCER, s.getKind());
         assertEquals("v", s.getAttributes().get(AttributeKey.stringKey("k")));
+    }
+
+    @Test
+    void shouldPassLinksToTheSpanBuilderInOrder() throws Exception {
+        var f = new Fixture();
+        var first = spanUnsafe(tracer, f.name("LinkA"));
+        first.close();
+        var second = spanUnsafe(tracer, f.name("LinkB"));
+        second.close();
+
+        spanRun(
+                tracer,
+                f.name(LEVEL0),
+                spanOptions()
+                        .withLinks(
+                                List.of(
+                                        first.span().getSpanContext(),
+                                        second.span().getSpanContext())),
+                () -> {});
+
+        var links = f.spansOf(LEVEL0).getFirst().getLinks();
+        assertEquals(2, links.size());
+        assertEquals(
+                first.span().getSpanContext().getSpanId(),
+                links.get(0).getSpanContext().getSpanId());
+        assertEquals(
+                second.span().getSpanContext().getSpanId(),
+                links.get(1).getSpanContext().getSpanId());
     }
 
     @Test
@@ -593,7 +717,7 @@ public class OtelTracingTest {
         var f = new Fixture();
         var semaphore = new Semaphore(0);
 
-        ScopedValue.where(Scope.THREAD_FACTORY, new PropagatingVirtualThreadFactory())
+        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
                 .call(
                         () ->
                                 supervised(
@@ -607,12 +731,16 @@ public class OtelTracingTest {
                                                                                     f.name(LEVEL1))
                                                                             .tap(
                                                                                     x -> {
-                                                                                        if (x == 1) {
-                                                                                            semaphore.release();
+                                                                                        if (x
+                                                                                                == 1) {
+                                                                                            semaphore
+                                                                                                    .release();
                                                                                         } else {
-                                                                                            Thread.sleep(
-                                                                                                    Duration.ofSeconds(
-                                                                                                            100));
+                                                                                            Thread
+                                                                                                    .sleep(
+                                                                                                            Duration
+                                                                                                                    .ofSeconds(
+                                                                                                                            100));
                                                                                         }
                                                                                     })
                                                                             .runToList());

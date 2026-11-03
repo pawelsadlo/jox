@@ -31,7 +31,7 @@ public record SpanOptions(
         Consumer<SpanWithError> beforeClose) {
 
     private static final SpanOptions DEFAULT =
-            new SpanOptions(SpanKind.INTERNAL, Attributes.empty(), List.of(), s -> {});
+            new SpanOptions(SpanKind.INTERNAL, Attributes.empty(), List.of(), _ -> {});
 
     /** Default options: an {@link SpanKind#INTERNAL} span, without attributes or links. */
     public static SpanOptions spanOptions() {
