@@ -10,10 +10,21 @@ import static com.softwaremill.jox.structured.Scopes.supervised;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.softwaremill.jox.flows.Flow;
-import com.softwaremill.jox.flows.Flows;
-import com.softwaremill.jox.otel.context.PropagatingForkDecorator;
-import com.softwaremill.jox.structured.Scope;
+import java.nio.channels.AsynchronousCloseException;
+import java.nio.channels.ClosedByInterruptException;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
@@ -27,21 +38,10 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Test;
-
-import java.nio.channels.AsynchronousCloseException;
-import java.nio.channels.ClosedByInterruptException;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Stream;
+import com.softwaremill.jox.flows.Flow;
+import com.softwaremill.jox.flows.Flows;
+import com.softwaremill.jox.otel.context.PropagatingForkDecorator;
+import com.softwaremill.jox.structured.Scope;
 
 public class OtelTracingTest {
     private static final InMemorySpanExporter exporter = InMemorySpanExporter.create();
@@ -367,6 +367,56 @@ public class OtelTracingTest {
         assertEquals(
                 f.spansOf(LEVEL0).getFirst().getSpanId(),
                 f.spansOf(LEVEL1).getFirst().getParentSpanId());
+    }
+
+    @Test
+    void shouldPropagateTheContextThroughNestedScopesAndForks() throws Exception {
+        var f = new Fixture();
+
+        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+                .call(
+                        () ->
+                                supervised(
+                                        outer -> {
+                                            var lvl1 = spanUnsafe(tracer, f.name(LEVEL0));
+                                            outer.forkUser(
+                                                            () -> {
+                                                                var lvl2 =
+                                                                        spanUnsafe(
+                                                                                tracer,
+                                                                                f.name(LEVEL1));
+                                                                // a nested scope, started from
+                                                                // within a fork
+                                                                supervised(
+                                                                        inner ->
+                                                                                inner.forkUser(
+                                                                                                () ->
+                                                                                                        span(
+                                                                                                                tracer,
+                                                                                                                f
+                                                                                                                        .name(
+                                                                                                                                LEVEL1_FIRST_CHILD),
+                                                                                                                () ->
+                                                                                                                        1))
+                                                                                        .join());
+                                                                lvl2.close();
+                                                                return null;
+                                                            })
+                                                    .join();
+                                            lvl1.close();
+                                            return null;
+                                        }));
+
+        assertEquals(1, f.spansOf(LEVEL0).size());
+        assertEquals(1, f.spansOf(LEVEL1).size());
+        assertEquals(1, f.spansOf(LEVEL1_FIRST_CHILD).size());
+        // the chain nests at every hop: scope body -> fork -> nested scope's fork
+        assertEquals(
+                f.spansOf(LEVEL0).getFirst().getSpanId(),
+                f.spansOf(LEVEL1).getFirst().getParentSpanId());
+        assertEquals(
+                f.spansOf(LEVEL1).getFirst().getSpanId(),
+                f.spansOf(LEVEL1_FIRST_CHILD).getFirst().getParentSpanId());
     }
 
     @Test
