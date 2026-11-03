@@ -22,9 +22,26 @@ public final class Scope {
     private final Lock externalSchedulerLock = new ReentrantLock();
     private volatile ActorRef<ExternalScheduler> externalSchedulerActor;
 
+    /**
+     * The {@link ThreadFactory} used to create the threads backing the forks of newly created
+     * scopes. If not set, virtual threads are used, as created by {@link
+     * StructuredTaskScope#open(StructuredTaskScope.Joiner)}.
+     *
+     * <p>To set the factory, use the {@link ScopedValue#where(ScopedValue, Object)} method, e.g.
+     * {@code ScopedValue.where(Scope.THREAD_FACTORY, myFactory).run(() -> supervised(...))}. This
+     * is used e.g. to propagate the OpenTelemetry context to forks, see the {@code otel-context}
+     * module.
+     */
+    public static final ScopedValue<ThreadFactory> THREAD_FACTORY = ScopedValue.newInstance();
+
     Scope() {
         this.scopeDone = new AtomicBoolean(false);
-        this.rawScope = StructuredTaskScope.open(new CancelWhenDoneJoiner(scopeDone));
+        var joiner = new CancelWhenDoneJoiner(scopeDone);
+        this.rawScope =
+                THREAD_FACTORY.isBound()
+                        ? StructuredTaskScope.open(
+                                joiner, config -> config.withThreadFactory(THREAD_FACTORY.get()))
+                        : StructuredTaskScope.open(joiner);
         this.supervisor = new Supervisor();
     }
 
