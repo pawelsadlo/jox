@@ -13,6 +13,10 @@ import java.util.concurrent.Callable;
  * <p>Can't be a lambda, as a lambda can't implement a generic method; use an anonymous or a named
  * class.
  *
+ * <p>A single instance is shared by all the forks of all the scopes which run within the binding of
+ * {@link Scope#FORK_DECORATOR} - the bound value isn't copied - so implementations should be
+ * thread-safe, and keep any per-fork state in the returned {@link Callable}.
+ *
  * @see Scope#FORK_DECORATOR
  */
 public interface ForkDecorator {
