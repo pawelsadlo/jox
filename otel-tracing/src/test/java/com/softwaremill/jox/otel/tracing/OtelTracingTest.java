@@ -233,7 +233,7 @@ public class OtelTracingTest {
         var f = new Fixture();
         var parent = spanUnsafe(tracer, f.name(LEVEL0));
 
-        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+        ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
                 .call(
                         () ->
                                 spanEach(f.flow, tracer, f.name(LEVEL1))
@@ -258,7 +258,7 @@ public class OtelTracingTest {
         var f = new Fixture();
         var parent = spanUnsafe(tracer, f.name(LEVEL0));
 
-        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+        ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
                 .call(
                         () ->
                                 supervised(
@@ -320,7 +320,7 @@ public class OtelTracingTest {
         var f = new Fixture();
         var parent = spanUnsafe(tracer, f.name(LEVEL0));
 
-        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+        ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
                 .call(
                         () ->
                                 supervised(
@@ -344,7 +344,7 @@ public class OtelTracingTest {
         var f = new Fixture();
 
         // a long-lived scope, with a span opened per unit of work *inside* it
-        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+        ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
                 .call(
                         () ->
                                 supervised(
@@ -373,7 +373,7 @@ public class OtelTracingTest {
     void shouldPropagateTheContextThroughNestedScopesAndForks() throws Exception {
         var f = new Fixture();
 
-        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+        ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
                 .call(
                         () ->
                                 supervised(
@@ -767,7 +767,7 @@ public class OtelTracingTest {
         var f = new Fixture();
         var semaphore = new Semaphore(0);
 
-        ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+        ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
                 .call(
                         () ->
                                 supervised(

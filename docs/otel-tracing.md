@@ -59,7 +59,7 @@ import static com.softwaremill.jox.structured.Scopes.supervised;
 import com.softwaremill.jox.otel.context.PropagatingForkDecorator;
 import com.softwaremill.jox.structured.Scope;
 
-ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
     .call(() -> supervised(scope -> {
         // spans created in forks are children of the span active when the fork was created
         return null;
@@ -74,7 +74,7 @@ it. Hence it's usually set once, at the entry point:
 
 ```java
 public static void main(String[] args) throws Exception {
-    ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+    ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
         .call(() -> runApp());
 }
 ```

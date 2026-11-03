@@ -15,11 +15,14 @@ import com.softwaremill.jox.structured.ForkDecorator;
  * com.softwaremill.jox.structured.Scope#FORK_DECORATOR} scoped value:
  *
  * <pre>{@code
- * ScopedValue.where(Scope.FORK_DECORATOR, new PropagatingForkDecorator())
+ * ScopedValue.where(Scope.FORK_DECORATOR, PropagatingForkDecorator.INSTANCE)
  *     .call(() -> supervised(scope -> { ... }));
  * }</pre>
  */
 public class PropagatingForkDecorator implements ForkDecorator {
+    /** The decorator; it is stateless, so a single instance can be shared. */
+    public static final PropagatingForkDecorator INSTANCE = new PropagatingForkDecorator();
+
     @Override
     public <T> Callable<T> decorate(Callable<T> f) {
         // captured on the thread which starts the fork, where the context is still current
