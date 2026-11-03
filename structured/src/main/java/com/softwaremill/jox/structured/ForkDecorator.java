@@ -6,9 +6,15 @@ import java.util.concurrent.Callable;
  * Decorates the body of a fork, so that state of the thread which starts the fork can be restored
  * around it.
  *
+ * <p>A {@link java.util.function.UnaryOperator} of {@link Callable} wouldn't do: {@link #decorate}
+ * is generic in the fork's result type, which keeps the decorated body's type the same as the
+ * original one. Otherwise, the result would have to be cast.
+ *
+ * <p>Can't be a lambda, as a lambda can't implement a generic method; use an anonymous or a named
+ * class.
+ *
  * @see Scope#FORK_DECORATOR
  */
-@FunctionalInterface
 public interface ForkDecorator {
     /**
      * Returns the body to run in the fork, given the original one. Called on the thread which calls
