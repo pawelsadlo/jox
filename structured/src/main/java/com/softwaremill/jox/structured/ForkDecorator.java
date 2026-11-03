@@ -10,8 +10,8 @@ import java.util.concurrent.Callable;
  * is generic in the fork's result type, which keeps the decorated body's type the same as the
  * original one. Otherwise, the result would have to be cast.
  *
- * <p>Can't be a lambda, as a lambda can't implement a generic method; use an anonymous or a named
- * class.
+ * <p>Can't be a lambda, as a lambda can't implement a generic method; use a named class, an
+ * anonymous one, or - for a stateless decorator - a single-element enum.
  *
  * <p>A single instance is shared by all the forks of all the scopes which run within the binding of
  * {@link Scope#FORK_DECORATOR} - the bound value isn't copied - so implementations should be
